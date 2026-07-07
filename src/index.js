@@ -10,6 +10,7 @@ const { errorHandler, notFound } = require('./middleware/errorHandler');
 // Import routes
 const githubRoutes = require('./integrations/github/routes');
 const vercelRoutes = require('./integrations/vercel/routes');
+const railwayRoutes = require('./integrations/railway/routes');
 const webhookRoutes = require('./webhooks/routes');
 
 // Initialize Express app
@@ -60,7 +61,8 @@ app.get('/api', (req, res) => {
     description: 'Flora DevOps microservice for developer tools and version control integrations',
     integrations: {
       github: '/api/integrations/github',
-      vercel: '/api/integrations/vercel (OAuth credentials required)'
+      vercel: '/api/integrations/vercel (OAuth credentials required)',
+      railway: '/api/integrations/railway (OAuth credentials required)'
     },
     webhooks: '/api/webhooks',
     documentation: 'https://github.com/enekwe/flora-devops'
@@ -70,6 +72,7 @@ app.get('/api', (req, res) => {
 // Mount integration routes
 app.use('/api/integrations/github', githubRoutes);
 app.use('/api/integrations/vercel', vercelRoutes);
+app.use('/api/integrations/railway', railwayRoutes);
 
 // Mount webhook routes
 app.use('/api/webhooks', webhookRoutes);

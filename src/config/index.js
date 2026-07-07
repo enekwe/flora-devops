@@ -24,6 +24,11 @@ module.exports = {
   VERCEL_CLIENT_SECRET: process.env.VERCEL_CLIENT_SECRET,
   VERCEL_CALLBACK_URL: process.env.VERCEL_CALLBACK_URL,
 
+  // Railway (Coming Soon)
+  RAILWAY_CLIENT_ID: process.env.RAILWAY_CLIENT_ID,
+  RAILWAY_CLIENT_SECRET: process.env.RAILWAY_CLIENT_SECRET,
+  RAILWAY_CALLBACK_URL: process.env.RAILWAY_CALLBACK_URL,
+
   // CORS
   ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS
     ? process.env.ALLOWED_ORIGINS.split(',')
