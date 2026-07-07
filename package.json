@@ -19,9 +19,9 @@
   "author": "Flora Team",
   "license": "MIT",
   "dependencies": {
-    "@octokit/auth-app": "^7.1.0",
+    "@octokit/auth-app": "6.1.1",
     "@octokit/auth-oauth-app": "^7.0.1",
-    "@octokit/rest": "^20.0.2",
+    "@octokit/rest": "19.0.13",
     "axios": "^1.6.2",
     "cors": "^2.8.5",
     "crypto": "^1.0.1",
