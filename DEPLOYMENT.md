@@ -44,29 +44,6 @@ railway variables set GITHUB_CLIENT_SECRET="your-github-client-secret"
 railway variables set GITHUB_CALLBACK_URL="https://flora-devops.up.railway.app/api/integrations/github/callback"
 railway variables set GITHUB_WEBHOOK_SECRET="your-github-webhook-secret"
 
-# GitLab OAuth
-railway variables set GITLAB_CLIENT_ID="your-gitlab-client-id"
-railway variables set GITLAB_CLIENT_SECRET="your-gitlab-client-secret"
-railway variables set GITLAB_CALLBACK_URL="https://flora-devops.up.railway.app/api/integrations/gitlab/callback"
-railway variables set GITLAB_WEBHOOK_SECRET="your-gitlab-webhook-secret"
-railway variables set GITLAB_INSTANCE_URL="https://gitlab.com"
-
-# Linear OAuth
-railway variables set LINEAR_CLIENT_ID="your-linear-client-id"
-railway variables set LINEAR_CLIENT_SECRET="your-linear-client-secret"
-railway variables set LINEAR_CALLBACK_URL="https://flora-devops.up.railway.app/api/integrations/linear/callback"
-railway variables set LINEAR_WEBHOOK_SECRET="your-linear-webhook-secret"
-
-# Vercel OAuth
-railway variables set VERCEL_CLIENT_ID="your-vercel-client-id"
-railway variables set VERCEL_CLIENT_SECRET="your-vercel-client-secret"
-railway variables set VERCEL_CALLBACK_URL="https://flora-devops.up.railway.app/api/integrations/vercel/callback"
-
-# Netlify OAuth
-railway variables set NETLIFY_CLIENT_ID="your-netlify-client-id"
-railway variables set NETLIFY_CLIENT_SECRET="your-netlify-client-secret"
-railway variables set NETLIFY_CALLBACK_URL="https://flora-devops.up.railway.app/api/integrations/netlify/callback"
-
 # Service Configuration
 railway variables set NODE_ENV="production"
 railway variables set PORT="4003"
@@ -127,40 +104,6 @@ Expected response:
    - Application name: `Flora DevOps`
    - Homepage URL: `https://flora-devops.up.railway.app`
    - Authorization callback URL: `https://flora-devops.up.railway.app/api/integrations/github/callback`
-3. Copy Client ID and Client Secret to Railway variables
-
-#### GitLab OAuth App
-
-1. Go to GitLab Settings > Applications
-2. Create new application:
-   - Name: `Flora DevOps`
-   - Redirect URI: `https://flora-devops.up.railway.app/api/integrations/gitlab/callback`
-   - Scopes: `api`, `read_user`, `read_repository`, `write_repository`
-3. Copy Application ID and Secret to Railway variables
-
-#### Linear OAuth App
-
-1. Go to Linear Settings > API > Create OAuth application
-2. Configure:
-   - Name: `Flora DevOps`
-   - Redirect URL: `https://flora-devops.up.railway.app/api/integrations/linear/callback`
-   - Scopes: `read`, `write`
-3. Copy Client ID and Client Secret to Railway variables
-
-#### Vercel OAuth App
-
-1. Go to Vercel Account Settings > Integrations
-2. Create new OAuth integration:
-   - Name: `Flora DevOps`
-   - Redirect URL: `https://flora-devops.up.railway.app/api/integrations/vercel/callback`
-3. Copy Client ID and Client Secret to Railway variables
-
-#### Netlify OAuth App
-
-1. Go to Netlify User Settings > Applications
-2. Create new OAuth application:
-   - Application name: `Flora DevOps`
-   - Redirect URI: `https://flora-devops.up.railway.app/api/integrations/netlify/callback`
 3. Copy Client ID and Client Secret to Railway variables
 
 ### Port Configuration

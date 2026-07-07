@@ -1,6 +1,6 @@
 # Flora DevOps Microservice
 
-A comprehensive microservice for developer tools and version control integrations, including GitHub, GitLab, Linear, Vercel, and Netlify.
+A comprehensive microservice for developer tools and version control integrations, focused on GitHub integration.
 
 ## Features
 
@@ -14,31 +14,13 @@ A comprehensive microservice for developer tools and version control integration
    - Webhook management
    - Encrypted token storage (AES-256-GCM)
 
-2. **GitLab Integration**
-   - OAuth authentication with token refresh
-   - Project management
-   - Issue tracking
-   - CI/CD pipeline integration
-   - Merge request tracking
-   - Webhook support
+### Coming Soon
 
-3. **Linear Integration**
-   - OAuth authentication
-   - Team management
-   - Issue tracking with GraphQL API
-   - Project management
-   - Webhook support
-
-4. **Vercel Integration**
+2. **Vercel Integration** (Planned)
    - OAuth authentication
    - Project listing
    - Deployment tracking
    - Team support
-
-5. **Netlify Integration**
-   - OAuth authentication
-   - Site management
-   - Deploy tracking
 
 ## Architecture
 
@@ -54,7 +36,7 @@ All integrations follow a strict multi-tenant architecture:
 ### Security
 
 - AES-256-GCM encryption for all OAuth tokens
-- Webhook signature verification (GitHub, GitLab, Linear)
+- Webhook signature verification (GitHub)
 - Rate limiting on all API endpoints
 - Helmet.js for security headers
 - CORS configuration
@@ -144,75 +126,10 @@ GET /api/integrations/github/repos/{owner}/{repo}/hooks
 POST /api/integrations/github/repos/{owner}/{repo}/hooks
 ```
 
-### GitLab Integration
-
-```
-GET /api/integrations/gitlab/auth?userId={userId}&organizationId={orgId}
-GET /api/integrations/gitlab/callback?code={code}&state={state}
-GET /api/integrations/gitlab/status?userId={userId}&organizationId={orgId}
-DELETE /api/integrations/gitlab/disconnect
-
-GET /api/integrations/gitlab/projects?userId={userId}&organizationId={orgId}
-POST /api/integrations/gitlab/projects
-
-GET /api/integrations/gitlab/projects/{projectId}/issues
-POST /api/integrations/gitlab/projects/{projectId}/issues
-
-GET /api/integrations/gitlab/projects/{projectId}/pipelines
-POST /api/integrations/gitlab/projects/{projectId}/pipelines
-GET /api/integrations/gitlab/projects/{projectId}/pipelines/{pipelineId}
-
-GET /api/integrations/gitlab/projects/{projectId}/hooks
-POST /api/integrations/gitlab/projects/{projectId}/hooks
-```
-
-### Linear Integration
-
-```
-GET /api/integrations/linear/auth?userId={userId}&organizationId={orgId}
-GET /api/integrations/linear/callback?code={code}&state={state}
-GET /api/integrations/linear/status?userId={userId}&organizationId={orgId}
-DELETE /api/integrations/linear/disconnect
-
-GET /api/integrations/linear/teams?userId={userId}&organizationId={orgId}
-
-GET /api/integrations/linear/issues?userId={userId}&organizationId={orgId}
-POST /api/integrations/linear/issues
-PATCH /api/integrations/linear/issues/{issueId}
-
-POST /api/integrations/linear/webhooks
-```
-
-### Vercel Integration
-
-```
-GET /api/integrations/vercel/auth?userId={userId}&organizationId={orgId}
-GET /api/integrations/vercel/callback?code={code}&state={state}
-GET /api/integrations/vercel/status?userId={userId}&organizationId={orgId}
-DELETE /api/integrations/vercel/disconnect
-
-GET /api/integrations/vercel/projects?userId={userId}&organizationId={orgId}
-GET /api/integrations/vercel/projects/{projectId}/deployments
-```
-
-### Netlify Integration
-
-```
-GET /api/integrations/netlify/auth?userId={userId}&organizationId={orgId}
-GET /api/integrations/netlify/callback?code={code}&state={state}
-GET /api/integrations/netlify/status?userId={userId}&organizationId={orgId}
-DELETE /api/integrations/netlify/disconnect
-
-GET /api/integrations/netlify/sites?userId={userId}&organizationId={orgId}
-GET /api/integrations/netlify/sites/{siteId}/deploys
-```
-
 ### Webhooks
 
 ```
 POST /api/webhooks/github
-POST /api/webhooks/gitlab
-POST /api/webhooks/linear
 POST /api/webhooks/deployment
 ```
 
@@ -237,28 +154,6 @@ GITHUB_CLIENT_ID=your-github-client-id
 GITHUB_CLIENT_SECRET=your-github-client-secret
 GITHUB_CALLBACK_URL=https://your-domain.com/api/integrations/github/callback
 GITHUB_WEBHOOK_SECRET=your-github-webhook-secret
-
-# GitLab OAuth
-GITLAB_CLIENT_ID=your-gitlab-client-id
-GITLAB_CLIENT_SECRET=your-gitlab-client-secret
-GITLAB_CALLBACK_URL=https://your-domain.com/api/integrations/gitlab/callback
-GITLAB_WEBHOOK_SECRET=your-gitlab-webhook-secret
-
-# Linear OAuth
-LINEAR_CLIENT_ID=your-linear-client-id
-LINEAR_CLIENT_SECRET=your-linear-client-secret
-LINEAR_CALLBACK_URL=https://your-domain.com/api/integrations/linear/callback
-LINEAR_WEBHOOK_SECRET=your-linear-webhook-secret
-
-# Vercel OAuth
-VERCEL_CLIENT_ID=your-vercel-client-id
-VERCEL_CLIENT_SECRET=your-vercel-client-secret
-VERCEL_CALLBACK_URL=https://your-domain.com/api/integrations/vercel/callback
-
-# Netlify OAuth
-NETLIFY_CLIENT_ID=your-netlify-client-id
-NETLIFY_CLIENT_SECRET=your-netlify-client-secret
-NETLIFY_CALLBACK_URL=https://your-domain.com/api/integrations/netlify/callback
 
 # CORS
 ALLOWED_ORIGINS=https://your-frontend.com,https://your-app.com
@@ -315,8 +210,6 @@ flora-devops/
 │   │   │   ├── models/
 │   │   │   ├── services/
 │   │   │   └── routes/
-│   │   ├── gitlab/
-│   │   ├── linear/
 │   │   └── deployment/
 │   ├── middleware/       # Express middleware
 │   ├── utils/            # Utility functions

@@ -27,46 +27,14 @@ const schemas = {
     milestone: Joi.number(),
   }),
 
-  // GitLab
-  gitlabProject: Joi.object({
-    name: Joi.string().required(),
-    description: Joi.string().allow(''),
-    visibility: Joi.string().valid('private', 'internal', 'public').default('private'),
-    initializeWithReadme: Joi.boolean().default(false),
-  }),
-
-  gitlabIssue: Joi.object({
-    title: Joi.string().required(),
-    description: Joi.string().allow(''),
-    assigneeIds: Joi.array().items(Joi.number()),
-    labels: Joi.string().allow(''),
-  }),
-
-  // Linear
-  linearIssue: Joi.object({
-    title: Joi.string().required(),
-    description: Joi.string().allow(''),
-    teamId: Joi.string().required(),
-    assigneeId: Joi.string(),
-    priority: Joi.number().min(0).max(4),
-    labelIds: Joi.array().items(Joi.string()),
-  }),
-
-  // Vercel
+  // Vercel (Coming Soon)
   vercelDeployment: Joi.object({
     projectId: Joi.string().required(),
     gitSource: Joi.object({
-      type: Joi.string().valid('github', 'gitlab').required(),
+      type: Joi.string().valid('github').required(),
       repo: Joi.string().required(),
       ref: Joi.string(),
     }),
-  }),
-
-  // Netlify
-  netlifyDeployment: Joi.object({
-    siteId: Joi.string().required(),
-    dir: Joi.string(),
-    branch: Joi.string(),
   }),
 
   // Webhook

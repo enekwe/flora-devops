@@ -1,14 +1,99 @@
 const express = require('express');
 const router = express.Router();
+const crypto = require('crypto');
 const githubAuthService = require('../services/githubAuthService');
 const githubRepoService = require('../services/githubRepoService');
 const githubIssueService = require('../services/githubIssueService');
 const githubDeploymentService = require('../services/githubDeploymentService');
 const githubWebhookService = require('../services/githubWebhookService');
+const githubEventService = require('../services/githubEventService');
+const installationController = require('../controllers/installationController');
 const { validateRequest, schemas } = require('../../../utils/validation');
 const logger = require('../../../config/logger');
 
-// Authentication routes
+// ============================================================================
+// GitHub App Installation Routes (Merged from Monolith)
+// ============================================================================
+
+/**
+ * @route   GET /api/integrations/github/install
+ * @desc    Get GitHub App installation URL
+ * @access  Public (OAuth flow)
+ */
+router.get('/install', installationController.getInstallationUrl);
+
+/**
+ * @route   GET /api/integrations/github/callback
+ * @desc    Handle GitHub App installation callback
+ * @access  Public (OAuth flow)
+ */
+router.get('/callback', installationController.handleCallback);
+
+/**
+ * @route   GET /api/integrations/github/installations
+ * @desc    Get all GitHub App installations
+ * @access  Private
+ */
+router.get('/installations', installationController.getInstallations);
+
+/**
+ * @route   GET /api/integrations/github/installations/:id
+ * @desc    Get specific GitHub App installation
+ * @access  Private
+ */
+router.get('/installations/:id', installationController.getInstallation);
+
+/**
+ * @route   POST /api/integrations/github/installations/:id/sync
+ * @desc    Manually sync GitHub App installation (refresh repositories)
+ * @access  Private
+ */
+router.post('/installations/:id/sync', installationController.syncInstallation);
+
+/**
+ * @route   DELETE /api/integrations/github/installations/:id
+ * @desc    Delete (uninstall) GitHub App installation
+ * @access  Private
+ */
+router.delete('/installations/:id', installationController.deleteInstallation);
+
+/**
+ * @route   GET /api/integrations/github/installations/:id/repositories
+ * @desc    Get accessible repositories for installation
+ * @access  Private
+ */
+router.get('/installations/:id/repositories', installationController.getRepositories);
+
+/**
+ * @route   POST /api/integrations/github/installations/:id/repositories/:repoId/monitor
+ * @desc    Add repository to monitoring list
+ * @access  Private
+ */
+router.post('/installations/:id/repositories/:repoId/monitor', installationController.addMonitoredRepository);
+
+/**
+ * @route   DELETE /api/integrations/github/installations/:id/repositories/:repoId/monitor
+ * @desc    Remove repository from monitoring list
+ * @access  Private
+ */
+router.delete('/installations/:id/repositories/:repoId/monitor', installationController.removeMonitoredRepository);
+
+/**
+ * @route   POST /api/integrations/github/installations/:id/health-check
+ * @desc    Perform health check on installation
+ * @access  Private
+ */
+router.post('/installations/:id/health-check', installationController.performHealthCheck);
+
+// ============================================================================
+// OAuth Authentication routes (User-level GitHub connections)
+// ============================================================================
+
+/**
+ * @route   GET /api/integrations/github/auth
+ * @desc    Get GitHub OAuth authorization URL (user-level)
+ * @access  Public
+ */
 router.get('/auth', (req, res) => {
   try {
     const { userId, organizationId, state } = req.query;
@@ -426,32 +511,39 @@ router.post('/repos/:owner/:repo/hooks', validateRequest(schemas.webhook), async
   }
 });
 
-// Webhook handler endpoint
+// Webhook handler endpoint (merged from monolith with enhanced processing)
 router.post('/webhook', async (req, res) => {
   try {
     const signature = req.headers['x-hub-signature-256'];
     const event = req.headers['x-github-event'];
+    const deliveryId = req.headers['x-github-delivery'];
     const payload = JSON.stringify(req.body);
 
     // Verify webhook signature
     const isValid = githubWebhookService.verifySignature(payload, signature);
 
     if (!isValid) {
-      logger.warn('Invalid GitHub webhook signature');
+      logger.warn('Invalid GitHub webhook signature', { deliveryId });
       return res.status(401).json({
         success: false,
         message: 'Invalid signature'
       });
     }
 
-    logger.info(`GitHub webhook received: ${event}`);
+    logger.info('GitHub webhook received:', {
+      event,
+      deliveryId,
+      repository: req.body.repository?.full_name,
+      installation: req.body.installation?.id
+    });
 
-    // Process webhook event
-    // TODO: Implement event processing logic based on event type
+    // Process webhook event using event service
+    const result = await githubEventService.processWebhookEvent(event, req.body);
 
     res.json({
       success: true,
-      message: 'Webhook processed successfully'
+      message: 'Webhook processed successfully',
+      data: result
     });
   } catch (error) {
     logger.error('GitHub webhook processing failed:', error);
