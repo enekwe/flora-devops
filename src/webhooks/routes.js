@@ -3,6 +3,47 @@ const router = express.Router();
 const crypto = require('crypto');
 const config = require('../config');
 const logger = require('../config/logger');
+const driftAnalysisService = require('../integrations/github/services/driftAnalysisService');
+
+// Import models for finding company connection
+const mongoose = require('mongoose');
+
+/**
+ * Find the company + connection associated with a repository
+ * Maps GitHub repository to Flora company for drift analysis context
+ */
+async function findConnectionForRepo(repoFullName) {
+  try {
+    const GitHubConnection = mongoose.model('GitHubConnection');
+    const connection = await GitHubConnection.findOne({
+      'accessibleRepositories': { $in: [repoFullName] },
+      'status': 'active'
+    }).lean();
+
+    if (connection) {
+      return {
+        companyId: connection.companyId,
+        userId: connection.userId,
+        organizationId: connection.organizationId || connection.installationId
+      };
+    }
+
+    // Fallback: check monitored repositories
+    const monitoredConnection = await GitHubConnection.findOne({
+      'monitoredRepositories': { $in: [repoFullName] },
+      'status': 'active'
+    }).lean();
+
+    return monitoredConnection ? {
+      companyId: monitoredConnection.companyId,
+      userId: monitoredConnection.userId,
+      organizationId: monitoredConnection.organizationId || monitoredConnection.installationId
+    } : null;
+  } catch (error) {
+    logger.warn('Failed to find connection for repo:', error.message);
+    return null;
+  }
+}
 
 /**
  * Verify GitHub webhook signature
@@ -63,6 +104,26 @@ router.post('/github', async (req, res) => {
           number: req.body.number,
           title: req.body.pull_request?.title
         });
+
+        // E2-US1: Trigger drift analysis on PR open/sync/reopen
+        if (['opened', 'synchronize', 'reopened'].includes(req.body.action)) {
+          const repoFullName = req.body.repository?.full_name;
+          const connection = await findConnectionForRepo(repoFullName);
+
+          if (connection) {
+            setImmediate(() => {
+              driftAnalysisService.analyzePullRequest(req.body, connection)
+                .then(result => {
+                  if (result) {
+                    logger.info(`Drift analysis completed for PR #${req.body.number}: score=${result.overallScore} status=${result.driftStatus}`);
+                  }
+                })
+                .catch(err => logger.error('Async drift analysis error:', err));
+            });
+          } else {
+            logger.info(`No Flora connection found for repo ${repoFullName} — skipping drift analysis`);
+          }
+        }
         break;
 
       case 'issues':
