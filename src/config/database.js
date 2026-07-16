@@ -21,8 +21,13 @@ class Database {
         minPoolSize: 2,
         socketTimeoutMS: 45000,
         serverSelectionTimeoutMS: 5000,
-        family: 4
+        family: 4,
+        autoIndex: true, // Build indexes
+        autoCreate: true // Create collections automatically
       };
+
+      // Suppress duplicate index warnings
+      mongoose.set('strictQuery', false);
 
       this.connection = await mongoose.connect(uri, options);
 
