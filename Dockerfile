@@ -16,16 +16,15 @@ COPY . .
 # Create logs directory
 RUN mkdir -p logs
 
-# Expose port
+# Expose port (Railway will override with its own PORT env var)
 EXPOSE 4003
 
-# Set environment variables
+# Set environment variables (Railway will override PORT)
 ENV NODE_ENV=production
-ENV PORT=4003
 
-# Health check
+# Health check - use $PORT environment variable instead of hardcoded port
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-  CMD node -e "require('http').get('http://localhost:4003/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"
+  CMD node -e "const port = process.env.PORT || 4003; require('http').get(\`http://localhost:\${port}/health\`, (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"
 
 # Start the application
 CMD ["node", "src/index.js"]
