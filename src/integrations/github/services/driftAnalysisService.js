@@ -1,6 +1,6 @@
 const axios = require('axios');
-const logger = require('../config/logger');
-const config = require('../config');
+const logger = require('../../../config/logger');
+const config = require('../../../config');
 const githubIssueService = require('./githubIssueService');
 const githubAuthService = require('./githubAuthService');
 
