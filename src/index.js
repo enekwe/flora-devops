@@ -42,13 +42,18 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Health check endpoint
 app.get('/health', (req, res) => {
+  const dbConnected = database.isConnected();
   res.json({
     success: true,
     service: config.SERVICE_NAME,
     status: 'healthy',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
-    environment: config.NODE_ENV
+    environment: config.NODE_ENV,
+    database: {
+      connected: dbConnected,
+      status: dbConnected ? 'connected' : 'disconnected'
+    }
   });
 });
 
@@ -86,15 +91,18 @@ app.use(errorHandler);
 // Start server
 const startServer = async () => {
   try {
-    // Connect to database
-    await database.connect();
-
-    // Start listening
+    // Start listening FIRST (critical for Railway healthcheck)
     const PORT = config.PORT || 4003;
-    app.listen(PORT, () => {
+    const server = app.listen(PORT, () => {
       logger.info(`${config.SERVICE_NAME} microservice running on port ${PORT}`);
       logger.info(`Environment: ${config.NODE_ENV}`);
       logger.info(`Health check: http://localhost:${PORT}/health`);
+    });
+
+    // Connect to database AFTER server is listening
+    // This prevents Railway deployment failures if DB is slow/unavailable
+    database.connect().catch(err => {
+      logger.warn('Database connection failed, but service continues running:', err.message);
     });
   } catch (error) {
     logger.error('Failed to start server:', error);
