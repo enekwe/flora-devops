@@ -43,12 +43,26 @@ it in the project timeline / audit log.
 
 ## Status
 
-Phases 1–3 are implemented: model, build-intake endpoint, manifest validation,
+Phases 1–5 are implemented: model, build-intake endpoint, manifest validation,
 the phase state machine, CC callback wiring, template rendering, code
 generation via the CC provider brain, the static manifest-conformance
-integrity gate, and deploy via the GitHub + Railway/Vercel services. See
-`FLORA_APP_KIT_ARCHITECTURE.md` §8 for what's still pending (dynamic
-CI-driven test execution, `driftAnalysisService` wiring).
+integrity gate, GitHub connection registration (repos are now discoverable
+via `findConnectionForRepo`), a branch+PR push flow (no more direct commits
+to the default branch), `driftAnalysisService` wiring (results now persist
+onto `AppKitBuild` and can advance `tracking` -> `live`), and git-linked
+Railway/Vercel provisioning that triggers a real first preview deploy
+against the PR branch.
+
+Still pending, see `FLORA_APP_KIT_ARCHITECTURE.md` §8 for full detail:
+- Dynamic, CI-driven test execution (the scaffold ships `.github/workflows/ci.yml`,
+  but nothing consumes its results yet).
+- Auto-merge policy for the App Kit PR — deliberately **not** implemented;
+  the PR is always left open for human review.
+- Live execute-testing of the Railway/Vercel deploy path — this repo's dev
+  session had no live credentials/network access to either platform, so the
+  git-source-linking + first-deploy-trigger code is wired against each
+  platform's documented request/mutation shape but has not been run against
+  a real account.
 
 ## Config
 

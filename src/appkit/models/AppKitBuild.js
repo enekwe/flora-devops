@@ -95,6 +95,14 @@ const appKitBuildSchema = new mongoose.Schema({
   templateVersion: { type: String },
   deployTarget: { type: String, enum: ['railway', 'vercel'], default: 'railway' },
   repo: { type: String },        // e.g. "enekwe/capital-call-tracker"
+  // The branch App Kit pushed scaffolded+generated source to, and the PR
+  // opened from it back to the default branch — set once `pushFiles` runs
+  // (branch+PR, not a direct push to default, so driftAnalysisService's PR
+  // webhook gate fires). Needed later by the drift-result webhook handler to
+  // find this build via `repo`, and by deploy provisioning to target the
+  // right git ref for the first preview deploy.
+  branch: { type: String },
+  prNumber: { type: Number },
   deployUrl: { type: String },
 
   // Reference to the scoped app token CC minted for this build at `deploying`

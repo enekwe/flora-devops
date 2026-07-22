@@ -253,6 +253,37 @@ class VercelService {
   }
 
   /**
+   * Create a deployment (triggers a real build) — thin passthrough to
+   * vercelApiService.createDeployment (existing, but previously not exposed
+   * on this high-level wrapper), same pattern as createProject above. Used by
+   * App Kit to trigger a first preview build against the branch its PR pushed
+   * to, once the project is git-linked (see appKitDeployService.provisionVercel).
+   * @param {string} connectionId - Connection ID
+   * @param {Object} deploymentData - Deployment configuration (name, project, gitSource, target, etc.)
+   * @param {string} teamId - Optional team ID override
+   * @returns {Object} Created deployment
+   */
+  async createDeployment(connectionId, deploymentData, teamId = null) {
+    try {
+      const { accessToken, teamId: connectionTeamId } = await this.getAccessTokenByConnectionId(connectionId);
+      const effectiveTeamId = teamId || connectionTeamId;
+
+      const deployment = await vercelApiService.createDeployment(accessToken, deploymentData, effectiveTeamId);
+
+      return {
+        id: deployment.id,
+        url: deployment.url,
+        readyState: deployment.readyState,
+        target: deployment.target,
+        createdAt: deployment.createdAt
+      };
+    } catch (error) {
+      logger.error('Failed to create Vercel deployment:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Get deployment logs
    * @param {string} connectionId - Connection ID
    * @param {string} deploymentId - Deployment ID

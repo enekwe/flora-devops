@@ -365,7 +365,9 @@ class RailwayService {
   /**
    * Create a new service
    * @param {string} connectionId - Connection ID
-   * @param {Object} serviceData - Service configuration
+   * @param {Object} serviceData - Service configuration; forwarded as-is to
+   *   railwayApiService.createService, so an optional `source: { repo }`
+   *   (link a GitHub repo at creation) passes through unchanged.
    * @param {string} teamId - Optional team ID override
    * @returns {Object} Created service
    */

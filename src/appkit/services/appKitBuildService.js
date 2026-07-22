@@ -194,13 +194,15 @@ async function createBuild(input) {
  * `scaffolding` (`deployService.createGitHubRepo`), and the rendered files are
  * held in memory (`files`, local to this function — the whole pipeline is one
  * continuous async call, so there's no need to persist intermediate artifacts
- * to Mongo) through `generating` and `integrity_testing`. Files are pushed to
- * the repo (`scaffoldService.pushFiles`) only once `integrity_testing` has
- * actually passed, immediately before `deploying` — so a `blocked` build never
- * gets non-manifest-conforming generated code pushed to the user's GitHub at
- * all. `deploying` is left doing only what it can meaningfully do at that
- * point: provisioning the hosting shell (Railway/Vercel project + env vars)
- * against a repo that already has real source in it.
+ * to Mongo) through `generating` and `integrity_testing`. Files are pushed
+ * (`scaffoldService.pushFiles` — to a branch, with a PR opened back to the
+ * default branch, not a direct commit; see that function's doc comment) only
+ * once `integrity_testing` has actually passed, immediately before
+ * `deploying` — so a `blocked` build never gets non-manifest-conforming
+ * generated code pushed to the user's GitHub at all. `deploying` provisions
+ * the hosting shell (Railway/Vercel project + env vars) *and* now links the
+ * pushed branch as that shell's git source and triggers a real first
+ * (preview) build against it — see `appKitDeployService.provisionHostingShell`.
  */
 async function runPipeline(build) {
   try {
@@ -224,7 +226,10 @@ async function runPipeline(build) {
       return; // no deploy — Block's "quietly wrong" guard
     }
 
-    await scaffoldService.pushFiles(build, build.repo, files);
+    const pushResult = await scaffoldService.pushFiles(build, build.repo, files);
+    build.branch = pushResult.branch;
+    build.prNumber = pushResult.prNumber;
+    await build.save();
 
     await advance(build, 'deploying', `Deploying via ${build.deployTarget}`);
     const scopedToken = await requestScopedToken(build);

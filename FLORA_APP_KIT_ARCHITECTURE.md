@@ -1,10 +1,12 @@
 # Flora App Kit — Architecture & Build-Flow Specification
 
-**Status:** Phases 1–3 implemented — see `src/appkit/` (model, build-flow interface,
+**Status:** Phases 1–5 implemented — see `src/appkit/` (model, build-flow interface,
 manifest validation, phase state machine, CC callbacks, opinionated template +
-scaffold/generate/static-integrity pipeline, deploy orchestration). Remaining
-gaps (dynamic CI-driven test execution, `driftAnalysisService` wiring) are
-flagged per §8.
+scaffold/generate/static-integrity pipeline, deploy orchestration, GitHub
+connection registration, branch+PR push, `driftAnalysisService` wiring, and
+git-linked Railway/Vercel provisioning with a triggered first preview deploy).
+Remaining gaps (dynamic CI-driven test execution, auto-merge policy, live
+execute-testing of the Railway/Vercel deploy path) are flagged per §8.
 **Owning service:** `flora-devops` (App Kit ships as a module *inside* this service)
 **Companion doc:** `flora-command-center/APP_KIT_PROJECT_CONTRACT.md` (the CC-side project/audit contract)
 
@@ -244,6 +246,79 @@ APP_KIT_DEFAULT_DEPLOY_TARGET=   # railway | vercel
    - **Still pending:** real dynamic, CI-driven test execution — a webhook from
      the `.github/workflows/ci.yml` this scaffold ships back into
      `integrity_testing` (or a post-deploy gate) — as a stronger check layered
-     on top of the static one above; and wiring `driftAnalysisService` into
-     `tracking` now that a real, requirements-mapped diff exists to score.
-4. Expose the build flow as flora-mcp-server tools / a skill so NL requests drive it.
+     on top of the static one above.
+4. **Repo discoverability, branch+PR flow, drift wiring, and real first
+   deploy — done, with caveats below.**
+   - **GitHub connection registration.** `githubRepoService.createRepository`
+     never registered the new repo anywhere on the org's `GitHubConnection` —
+     only a full `listRepositories()` resync did, via `connection.addRepository()`.
+     `appKitDeployService.registerRepoOnConnection` now runs right after repo
+     creation and calls `connection.addMonitoredRepository(repoId)` — deliberately
+     *not* `addRepository()`, which writes to a `repositories` field nothing
+     else reads. This is best-effort/non-fatal: a registration failure does not
+     fail the build.
+   - **Bug fix, uncovered while wiring the above:** `findConnectionForRepo` in
+     `src/webhooks/routes.js` was comparing `accessibleRepositories` (an array
+     of `{ fullName, ... }` subdocuments) and `monitoredRepositories` (an array
+     of numeric repo IDs) both against `repoFullName` with `$in` — a type
+     mismatch on both branches that made the lookup a silent no-op regardless
+     of registration. Fixed to match `accessibleRepositories.fullName` (dot
+     notation) and `monitoredRepositories` against the numeric
+     `repository.id` from the webhook payload. Without this fix, repo
+     registration alone would not have made anything discoverable.
+   - **Branch + PR instead of a direct push to default.**
+     `appKitScaffoldService.pushFiles` now creates a branch
+     (`app-kit/<buildId>`) off the repo's default branch, pushes all files to
+     it (`githubRepoService.createOrUpdateFile`'s existing `branch` param —
+     no signature change needed there), and opens a PR back to default via a
+     new `githubRepoService.createPullRequest`. The PR is **left open — no
+     auto-merge**. Auto-merge is a materially different, more consequential
+     decision (bypassing human review of LLM-generated code before it lands
+     on default) and is explicitly flagged here as a next step for a human
+     decision, not implemented. `AppKitBuild.branch`/`AppKitBuild.prNumber`
+     record the result for later phases/webhooks.
+   - **`driftAnalysisService` now actually fires for App Kit builds**, because
+     something finally opens a PR. Its existing `pull_request` webhook gate in
+     `src/webhooks/routes.js` was already wired and untouched aside from the
+     lookup-bug fix above.
+   - **Drift results are now persisted onto `AppKitBuild`.** The webhook
+     handler's fire-and-forget `analyzePullRequest(...).then(...)` previously
+     only logged. It now looks up `AppKitBuild.findOne({ repo: repoFullName })`
+     (unique field) and records `driftScore`/`driftStatus`; if the build is in
+     `tracking` and `driftAnalysisService`'s own `driftStatus === 'aligned'`
+     (its existing threshold logic, not re-derived here), it advances to
+     `live` via `appKitBuildService.advance()` so the CC callback still fires.
+     Otherwise the score is recorded and the build stays in `tracking`.
+   - **Real first deploy (preview, against the PR branch).** Both
+     `railwayApiService.createService` and the Vercel project-creation path
+     now accept a git source. Railway's `serviceCreate` GraphQL mutation gained
+     an optional `source: ServiceSourceInput` variable
+     (`{ repo: "owner/repo" }`); Vercel's `createProject` call now includes
+     `gitRepository: { type: 'github', repo }` (that field was already a
+     generic passthrough in `vercelApiService.createProject`, so no signature
+     change was needed there — only in what `appKitDeployService` sends).
+     After linking, Railway calls the pre-existing (previously unused from App
+     Kit) `railwayService.triggerDeployment`; Vercel gets a new
+     `vercelService.createDeployment` passthrough (mirroring how
+     `createProject` was added) called with `gitSource: { type: 'github',
+     org, repo, ref: branch }` to target the PR branch specifically. Both
+     deploy targets are **preview deploys against the unmerged PR branch**,
+     which is the correct target given the PR is intentionally left open, not
+     a workaround.
+   - **Honesty check — what is and isn't verified:** this was built with no
+     live Railway or Vercel credentials/network access in-session, so none of
+     this was execute-tested end to end. Vercel's request shapes
+     (`gitRepository` on project creation, `gitSource` on deployment creation)
+     were confirmed against Vercel's public REST API reference docs during
+     this session and are high-confidence. Railway's shape is lower-confidence:
+     the public docs page for the GraphQL API describes how to authenticate
+     and use introspection, but doesn't publish the `ServiceSourceInput` field
+     list outside of an authenticated GraphiQL session, which this session
+     didn't have. The `source: { repo }` shape is taken as given rather than
+     independently confirmed. Also unconfirmed: whether `serviceCreate` can
+     pin a specific branch at creation (only `repo` is used) — Railway will
+     build from whatever branch its source resolves to by default, not
+     necessarily the App Kit PR branch. Pinning that precisely would need a
+     further Railway API call this session couldn't identify with confidence;
+     flagged here rather than guessed at.
+5. Expose the build flow as flora-mcp-server tools / a skill so NL requests drive it.
