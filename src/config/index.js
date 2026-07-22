@@ -29,6 +29,15 @@ module.exports = {
   RAILWAY_CLIENT_SECRET: process.env.RAILWAY_CLIENT_SECRET,
   RAILWAY_CALLBACK_URL: process.env.RAILWAY_CALLBACK_URL,
 
+  // Flora App Kit
+  // Command Center base URL — used for code generation (provider brain),
+  // the runtime data broker, and build-status callbacks into the CC project.
+  COMMAND_CENTER_API_URL: process.env.COMMAND_CENTER_API_URL || 'http://localhost:3015',
+  // Pinned opinionated-stack template version the scaffolder renders.
+  APP_KIT_TEMPLATE_VERSION: process.env.APP_KIT_TEMPLATE_VERSION || 'v0',
+  // Default deploy target when a build request does not specify one.
+  APP_KIT_DEFAULT_DEPLOY_TARGET: process.env.APP_KIT_DEFAULT_DEPLOY_TARGET || 'railway',
+
   // CORS
   ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS
     ? process.env.ALLOWED_ORIGINS.split(',')

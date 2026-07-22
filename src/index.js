@@ -12,6 +12,7 @@ const githubRoutes = require('./integrations/github/routes');
 const vercelRoutes = require('./integrations/vercel/routes');
 const railwayRoutes = require('./integrations/railway/routes');
 const webhookRoutes = require('./webhooks/routes');
+const appkitRoutes = require('./appkit/routes');
 
 // Initialize Express app
 const app = express();
@@ -69,6 +70,7 @@ app.get('/api', (req, res) => {
       vercel: '/api/integrations/vercel (OAuth credentials required)',
       railway: '/api/integrations/railway (OAuth credentials required)'
     },
+    appKit: '/api/appkit',
     webhooks: '/api/webhooks',
     documentation: 'https://github.com/enekwe/flora-devops'
   });
@@ -78,6 +80,9 @@ app.get('/api', (req, res) => {
 app.use('/api/integrations/github', githubRoutes);
 app.use('/api/integrations/vercel', vercelRoutes);
 app.use('/api/integrations/railway', railwayRoutes);
+
+// Mount Flora App Kit routes (custom-app build engine)
+app.use('/api/appkit', appkitRoutes);
 
 // Mount webhook routes
 app.use('/api/webhooks', webhookRoutes);

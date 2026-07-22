@@ -233,6 +233,141 @@ class GitHubRepoService {
   }
 
   /**
+   * Create or update a single file in a repository (used by App Kit to push
+   * scaffolded/generated source into a build's repo).
+   * @param {string} userId - User ID
+   * @param {string} organizationId - Organization ID
+   * @param {string} owner - Repository owner
+   * @param {string} repo - Repository name
+   * @param {string} filePath - Path within the repo, e.g. 'src/index.js'
+   * @param {string} content - Raw file content (utf8)
+   * @param {string} message - Commit message
+   * @param {string} [branch] - Target branch; defaults to the repo's default branch
+   * @returns {Object} { path, sha, commitSha }
+   */
+  async createOrUpdateFile(userId, organizationId, owner, repo, filePath, content, message, branch) {
+    try {
+      const octokit = await this.getOctokit(userId, organizationId);
+
+      let sha;
+      try {
+        const existing = await octokit.repos.getContent({ owner, repo, path: filePath, ref: branch });
+        if (!Array.isArray(existing.data)) {
+          sha = existing.data.sha;
+        }
+      } catch (error) {
+        if (error.status !== 404) throw error; // anything but "doesn't exist yet" is a real failure
+      }
+
+      const response = await octokit.repos.createOrUpdateFileContents({
+        owner,
+        repo,
+        path: filePath,
+        message,
+        content: Buffer.from(content, 'utf8').toString('base64'),
+        branch,
+        sha
+      });
+
+      return {
+        path: response.data.content?.path,
+        sha: response.data.content?.sha,
+        commitSha: response.data.commit?.sha
+      };
+    } catch (error) {
+      logger.error('Failed to create/update GitHub file:', error);
+      throw new AppError(
+        error.response?.data?.message || `Failed to create/update file ${filePath}`,
+        error.response?.status || 500
+      );
+    }
+  }
+
+  /**
+   * Create a new branch pointing at the tip of an existing branch (defaults to
+   * the repo's default branch). Used by App Kit to push scaffolded/generated
+   * source to a branch instead of the default branch, so the existing PR
+   * webhook gate (driftAnalysisService) actually runs before anything lands
+   * on main.
+   * @param {string} userId - User ID
+   * @param {string} organizationId - Organization ID
+   * @param {string} owner - Repository owner
+   * @param {string} repo - Repository name
+   * @param {string} branchName - New branch name (no 'refs/heads/' prefix)
+   * @param {string} [fromBranch] - Branch to fork from; defaults to the repo's default branch
+   * @returns {Object} { ref, sha, baseBranch }
+   */
+  async createBranch(userId, organizationId, owner, repo, branchName, fromBranch) {
+    try {
+      const octokit = await this.getOctokit(userId, organizationId);
+
+      let baseBranch = fromBranch;
+      if (!baseBranch) {
+        const repoInfo = await octokit.repos.get({ owner, repo });
+        baseBranch = repoInfo.data.default_branch;
+      }
+
+      const baseRef = await octokit.git.getRef({ owner, repo, ref: `heads/${baseBranch}` });
+      const response = await octokit.git.createRef({
+        owner,
+        repo,
+        ref: `refs/heads/${branchName}`,
+        sha: baseRef.data.object.sha
+      });
+
+      return {
+        ref: response.data.ref,
+        sha: response.data.object.sha,
+        baseBranch
+      };
+    } catch (error) {
+      logger.error('Failed to create GitHub branch:', error);
+      throw new AppError(
+        error.response?.data?.message || `Failed to create branch ${branchName}`,
+        error.response?.status || 500
+      );
+    }
+  }
+
+  /**
+   * Open a pull request from a branch back to a base branch (used by App Kit
+   * to hand the pushed branch to driftAnalysisService's existing pull_request
+   * webhook gate instead of committing straight to the default branch).
+   * @param {string} userId - User ID
+   * @param {string} organizationId - Organization ID
+   * @param {string} owner - Repository owner
+   * @param {string} repo - Repository name
+   * @param {Object} params
+   * @param {string} params.title - PR title
+   * @param {string} params.head - Source branch
+   * @param {string} params.base - Target branch
+   * @param {string} [params.body] - PR description
+   * @returns {Object} { number, url, state, head, base }
+   */
+  async createPullRequest(userId, organizationId, owner, repo, { title, head, base, body }) {
+    try {
+      const octokit = await this.getOctokit(userId, organizationId);
+      const response = await octokit.pulls.create({ owner, repo, title, head, base, body });
+
+      logger.info(`GitHub pull request opened: ${owner}/${repo}#${response.data.number}`);
+
+      return {
+        number: response.data.number,
+        url: response.data.html_url,
+        state: response.data.state,
+        head: response.data.head?.ref,
+        base: response.data.base?.ref
+      };
+    } catch (error) {
+      logger.error('Failed to create GitHub pull request:', error);
+      throw new AppError(
+        error.response?.data?.message || 'Failed to create pull request',
+        error.response?.status || 500
+      );
+    }
+  }
+
+  /**
    * List repository branches
    * @param {string} userId - User ID
    * @param {string} organizationId - Organization ID

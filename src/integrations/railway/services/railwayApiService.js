@@ -442,15 +442,22 @@ class RailwayApiService {
    * Create a new service
    * @param {string} accessToken - Railway access token
    * @param {Object} serviceData - Service configuration
+   * @param {string} serviceData.projectId
+   * @param {string} serviceData.name
+   * @param {{ repo: string }} [serviceData.source] - Link a GitHub repo at
+   *   creation time (App Kit: source: { repo: "owner/repo" }), per Railway's
+   *   documented `ServiceSourceInput`. `source` is a nullable GraphQL
+   *   variable, so omitting it (undefined) is equivalent to not passing it.
    * @returns {Object} Created service
    */
   async createService(accessToken, serviceData) {
     try {
       const query = `
-        mutation($projectId: String!, $name: String!) {
+        mutation($projectId: String!, $name: String!, $source: ServiceSourceInput) {
           serviceCreate(input: {
             projectId: $projectId
             name: $name
+            source: $source
           }) {
             id
             name

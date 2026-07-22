@@ -4,6 +4,8 @@ const crypto = require('crypto');
 const config = require('../config');
 const logger = require('../config/logger');
 const driftAnalysisService = require('../integrations/github/services/driftAnalysisService');
+const AppKitBuild = require('../appkit/models/AppKitBuild');
+const appKitBuildService = require('../appkit/services/appKitBuildService');
 
 // Import models for finding company connection
 const mongoose = require('mongoose');
@@ -11,37 +13,77 @@ const mongoose = require('mongoose');
 /**
  * Find the company + connection associated with a repository
  * Maps GitHub repository to Flora company for drift analysis context
+ *
+ * Both match branches below were previously comparing the wrong shape:
+ * `accessibleRepositories` holds subdocuments (`{ id, fullName, ... }`), so
+ * `{ $in: [repoFullName] }` against the array field itself never matches a
+ * subdocument — it needs the dot-notation `accessibleRepositories.fullName`.
+ * `monitoredRepositories` holds numeric GitHub repo IDs
+ * (`GitHubConnection.addMonitoredRepository`), not full-name strings, so it
+ * has to be matched against `repoId`, not `repoFullName`. This was a
+ * pre-existing bug that made this function a no-op for both fields; fixing it
+ * is what makes App Kit's repo registration (appKitDeployService.
+ * registerRepoOnConnection, which calls addMonitoredRepository) actually
+ * discoverable here.
  */
-async function findConnectionForRepo(repoFullName) {
+async function findConnectionForRepo(repoFullName, repoId) {
   try {
     const GitHubConnection = mongoose.model('GitHubConnection');
-    const connection = await GitHubConnection.findOne({
-      'accessibleRepositories': { $in: [repoFullName] },
-      'status': 'active'
-    }).lean();
-
-    if (connection) {
-      return {
-        companyId: connection.companyId,
-        userId: connection.userId,
-        organizationId: connection.organizationId || connection.installationId
-      };
+    const or = [{ 'accessibleRepositories.fullName': repoFullName }];
+    if (typeof repoId === 'number') {
+      or.push({ monitoredRepositories: repoId });
     }
 
-    // Fallback: check monitored repositories
-    const monitoredConnection = await GitHubConnection.findOne({
-      'monitoredRepositories': { $in: [repoFullName] },
-      'status': 'active'
+    const connection = await GitHubConnection.findOne({
+      status: 'active',
+      $or: or
     }).lean();
 
-    return monitoredConnection ? {
-      companyId: monitoredConnection.companyId,
-      userId: monitoredConnection.userId,
-      organizationId: monitoredConnection.organizationId || monitoredConnection.installationId
+    return connection ? {
+      companyId: connection.companyId,
+      userId: connection.userId,
+      organizationId: connection.organizationId || connection.installationId
     } : null;
   } catch (error) {
     logger.warn('Failed to find connection for repo:', error.message);
     return null;
+  }
+}
+
+/**
+ * Persist a drift analysis result onto the AppKitBuild it belongs to (if the
+ * PR's repo is one App Kit created — `AppKitBuild.repo` is unique, so this is
+ * a direct lookup). Advances `tracking` -> `live` via appKitBuildService.advance
+ * (not a hand-rolled phase write) so the Command Center callback still fires,
+ * reusing driftAnalysisService's own `driftStatus === 'aligned'` definition
+ * (already threshold-derived there) rather than re-deriving a cutoff here.
+ * Best-effort: a build that isn't found, or a save/advance failure, must not
+ * break webhook processing for non-App-Kit repos sharing this same handler.
+ */
+async function syncAppKitBuildDrift(repoFullName, driftResult) {
+  if (!repoFullName || !driftResult) return;
+  try {
+    const build = await AppKitBuild.findOne({ repo: repoFullName });
+    if (!build) return; // not an App Kit-originated repo
+
+    build.driftScore = driftResult.overallScore;
+    build.driftStatus = driftResult.driftStatus;
+
+    if (build.phase === 'tracking' && driftResult.driftStatus === 'aligned') {
+      await appKitBuildService.advance(build, 'live', `Drift analysis aligned (score ${driftResult.overallScore})`);
+    } else {
+      await build.save();
+    }
+
+    logger.info('App Kit build updated from drift analysis', {
+      buildId: build.buildId,
+      repo: repoFullName,
+      driftScore: driftResult.overallScore,
+      driftStatus: driftResult.driftStatus,
+      phase: build.phase
+    });
+  } catch (error) {
+    logger.warn('Failed to sync drift result onto AppKitBuild (non-fatal):', error.message);
   }
 }
 
@@ -108,14 +150,15 @@ router.post('/github', async (req, res) => {
         // E2-US1: Trigger drift analysis on PR open/sync/reopen
         if (['opened', 'synchronize', 'reopened'].includes(req.body.action)) {
           const repoFullName = req.body.repository?.full_name;
-          const connection = await findConnectionForRepo(repoFullName);
+          const connection = await findConnectionForRepo(repoFullName, req.body.repository?.id);
 
           if (connection) {
             setImmediate(() => {
               driftAnalysisService.analyzePullRequest(req.body, connection)
-                .then(result => {
+                .then(async result => {
                   if (result) {
                     logger.info(`Drift analysis completed for PR #${req.body.number}: score=${result.overallScore} status=${result.driftStatus}`);
+                    await syncAppKitBuildDrift(repoFullName, result);
                   }
                 })
                 .catch(err => logger.error('Async drift analysis error:', err));
