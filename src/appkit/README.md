@@ -11,9 +11,14 @@ Command Center contract: `flora-command-center/APP_KIT_PROJECT_CONTRACT.md`.
 ```
 appkit/
 ├── models/AppKitBuild.js            # build lifecycle record (multi-tenant)
+├── templates/v0/index.js            # the single fixed template (minimal Express app)
 ├── services/
 │   ├── appKitManifestService.js     # capability manifest = hard data boundary
-│   └── appKitBuildService.js        # state machine + CC callbacks
+│   ├── appKitBuildService.js        # state machine + CC callbacks + pipeline
+│   ├── appKitScaffoldService.js     # renders template, pushes files to the repo
+│   ├── appKitGenerateService.js     # calls CC provider brain to fill in code
+│   ├── appKitIntegrityService.js    # static manifest-conformance integrity gate
+│   └── appKitDeployService.js       # GitHub repo + Railway/Vercel hosting shell
 └── routes/index.js                  # /api/appkit build-flow interface
 ```
 
@@ -38,12 +43,12 @@ it in the project timeline / audit log.
 
 ## Status
 
-This is the **skeleton**: model, build-intake endpoint, manifest validation, the
-phase state machine, and CC callback wiring are implemented. The external effects
-of each phase (template render, code generation via the CC provider brain,
-data-integrity tests, and deploy via the GitHub + Railway/Vercel services) are
-marked with `TODO(appkit-phase-N)` in `appKitBuildService.js` and land in the
-phases described in the architecture doc §8.
+Phases 1–3 are implemented: model, build-intake endpoint, manifest validation,
+the phase state machine, CC callback wiring, template rendering, code
+generation via the CC provider brain, the static manifest-conformance
+integrity gate, and deploy via the GitHub + Railway/Vercel services. See
+`FLORA_APP_KIT_ARCHITECTURE.md` §8 for what's still pending (dynamic
+CI-driven test execution, `driftAnalysisService` wiring).
 
 ## Config
 

@@ -233,6 +233,57 @@ class GitHubRepoService {
   }
 
   /**
+   * Create or update a single file in a repository (used by App Kit to push
+   * scaffolded/generated source into a build's repo).
+   * @param {string} userId - User ID
+   * @param {string} organizationId - Organization ID
+   * @param {string} owner - Repository owner
+   * @param {string} repo - Repository name
+   * @param {string} filePath - Path within the repo, e.g. 'src/index.js'
+   * @param {string} content - Raw file content (utf8)
+   * @param {string} message - Commit message
+   * @param {string} [branch] - Target branch; defaults to the repo's default branch
+   * @returns {Object} { path, sha, commitSha }
+   */
+  async createOrUpdateFile(userId, organizationId, owner, repo, filePath, content, message, branch) {
+    try {
+      const octokit = await this.getOctokit(userId, organizationId);
+
+      let sha;
+      try {
+        const existing = await octokit.repos.getContent({ owner, repo, path: filePath, ref: branch });
+        if (!Array.isArray(existing.data)) {
+          sha = existing.data.sha;
+        }
+      } catch (error) {
+        if (error.status !== 404) throw error; // anything but "doesn't exist yet" is a real failure
+      }
+
+      const response = await octokit.repos.createOrUpdateFileContents({
+        owner,
+        repo,
+        path: filePath,
+        message,
+        content: Buffer.from(content, 'utf8').toString('base64'),
+        branch,
+        sha
+      });
+
+      return {
+        path: response.data.content?.path,
+        sha: response.data.content?.sha,
+        commitSha: response.data.commit?.sha
+      };
+    } catch (error) {
+      logger.error('Failed to create/update GitHub file:', error);
+      throw new AppError(
+        error.response?.data?.message || `Failed to create/update file ${filePath}`,
+        error.response?.status || 500
+      );
+    }
+  }
+
+  /**
    * List repository branches
    * @param {string} userId - User ID
    * @param {string} organizationId - Organization ID

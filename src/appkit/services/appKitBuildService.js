@@ -5,6 +5,9 @@ const logger = require('../../config/logger');
 const AppKitBuild = require('../models/AppKitBuild');
 const manifestService = require('./appKitManifestService');
 const deployService = require('./appKitDeployService');
+const scaffoldService = require('./appKitScaffoldService');
+const generateService = require('./appKitGenerateService');
+const integrityService = require('./appKitIntegrityService');
 
 /**
  * App Kit Build Service
@@ -13,11 +16,14 @@ const deployService = require('./appKitDeployService');
  *   accepted -> scaffolding -> generating -> integrity_testing -> deploying -> tracking -> live
  * with `blocked` (failed integrity tests) and `failed` (pipeline error) as off-ramps.
  *
- * This is the state machine + Command Center callback wiring. The external effects
- * of each phase — rendering the opinionated template, calling the CC provider brain
- * to generate code, running data-integrity tests, and shipping via the existing
- * GitHub + Railway/Vercel services — are the integration points implemented in
- * later phases (see FLORA_APP_KIT_ARCHITECTURE.md §8). They are marked below.
+ * This is the state machine + Command Center callback wiring, and it now drives
+ * the real phase effects too: rendering the opinionated template
+ * (`appKitScaffoldService`), calling the CC provider brain to generate code
+ * (`appKitGenerateService`), the static manifest-conformance integrity gate
+ * (`appKitIntegrityService`), and shipping via the existing GitHub +
+ * Railway/Vercel services (`appKitDeployService`) — see
+ * FLORA_APP_KIT_ARCHITECTURE.md §8 for the phasing and `runPipeline` below for
+ * the repo-creation ordering decision.
  */
 
 /**
@@ -179,41 +185,66 @@ async function createBuild(input) {
 /**
  * Drive the build through its phases.
  *
- * NOTE: the effects below are the integration points delivered in later phases.
- * The state machine, persistence, and CC callbacks are wired now; each `// TODO`
- * marks where the real external call attaches.
+ * Repo-creation ordering (FLORA_APP_KIT_ARCHITECTURE.md §8 phase 3): the repo
+ * used to be created inside `deploying` (appKitDeployService.deploy), but
+ * nothing existed to push into it until the template renderer landed here —
+ * and the repo must exist *before* `scaffolding`/`generating`/
+ * `integrity_testing` can push anything. Rather than juggle repo state across
+ * phase boundaries, the repo is now created once, at the very start of
+ * `scaffolding` (`deployService.createGitHubRepo`), and the rendered files are
+ * held in memory (`files`, local to this function — the whole pipeline is one
+ * continuous async call, so there's no need to persist intermediate artifacts
+ * to Mongo) through `generating` and `integrity_testing`. Files are pushed to
+ * the repo (`scaffoldService.pushFiles`) only once `integrity_testing` has
+ * actually passed, immediately before `deploying` — so a `blocked` build never
+ * gets non-manifest-conforming generated code pushed to the user's GitHub at
+ * all. `deploying` is left doing only what it can meaningfully do at that
+ * point: provisioning the hosting shell (Railway/Vercel project + env vars)
+ * against a repo that already has real source in it.
  */
 async function runPipeline(build) {
   try {
-    await advance(build, 'scaffolding', 'Rendering opinionated template + scoped data client');
-    // TODO(appkit-phase-3): appKitScaffoldService.render(build) — opinionated stack +
-    //   inject a scoped data client bound to build.manifest.dataScopes (no raw creds).
+    await advance(build, 'scaffolding', 'Creating repo and rendering opinionated template');
+    const repo = await deployService.createGitHubRepo(build);
+    build.repo = repo.fullName;
+    await build.save();
 
     await advance(build, 'generating', 'Generating app code via Command Center provider brain');
-    // TODO(appkit-phase-2): appKitGenerateService.generate(build) — call
-    //   COMMAND_CENTER_API_URL provider brain; token usage logged in CC.
+    const generated = await generateService.generate(build);
+    const files = scaffoldService.renderTemplate(build, generated.code);
 
-    await advance(build, 'integrity_testing', 'Running baked-in data-integrity tests');
-    // TODO(appkit-phase-3): run the template's data-correctness tests. On failure:
-    //   `await advance(build, 'blocked', reason)` and return — do NOT deploy.
+    await advance(build, 'integrity_testing', 'Running static manifest-conformance check');
+    const integrity = integrityService.checkManifestConformance(build.manifest, files);
+    if (!integrity.allowed) {
+      build.error = integrity.reason;
+      await advance(build, 'blocked', integrity.reason);
+      logger.warn('App Kit build blocked by static integrity check', {
+        buildId: build.buildId, op: integrity.op, calledOps: integrity.calledOps
+      });
+      return; // no deploy — Block's "quietly wrong" guard
+    }
+
+    await scaffoldService.pushFiles(build, build.repo, files);
 
     await advance(build, 'deploying', `Deploying via ${build.deployTarget}`);
     const scopedToken = await requestScopedToken(build);
     // Raw token lives only in this local variable, never persisted to Mongo
     // (build.appTokenJti is the only DB-side reference); it's threaded straight
-    // into the deploy call so it can be injected into the new service's env.
-    const { repo, deployUrl } = await deployService.deploy(build, scopedToken?.token);
-    build.repo = repo;
+    // into the hosting-shell call so it can be injected into the new service's env.
+    const { deployUrl } = await deployService.provisionHostingShell(build, scopedToken?.token);
     build.deployUrl = deployUrl;
 
     await advance(build, 'tracking', 'Deployed; awaiting drift analysis + deploy webhooks');
-    // TODO(appkit-phase-3): driftAnalysisService gate is deliberately NOT wired
-    //   here. It scores a real PR diff against CC's requirements graph
-    //   (analyzePullRequest(prPayload, connection)) — but this build's repo is a
-    //   single auto-init commit with no generated/requirements-mapped code yet
-    //   (that arrives with the phase-3 template renderer). Forcing it in now
-    //   would just score an empty repo. Revisit once appKitGenerateService /
-    //   appKitScaffoldService produce a real diff to gate on.
+    // TODO(appkit-phase-4): driftAnalysisService gate is still not wired here.
+    //   It can now score a real, requirements-mapped diff (the repo has
+    //   scaffolded + generated source as of the push above), so this is a
+    //   reasonable next increment rather than a blocker. Also still pending:
+    //   real dynamic test execution — actually running the template's Jest
+    //   suite — via the .github/workflows/ci.yml this build's scaffold ships;
+    //   that's async/webhook-driven (a CI run reporting back into
+    //   `integrity_testing` or a post-deploy gate) rather than run in-process
+    //   here, deliberately, to avoid executing LLM-generated code inside this
+    //   live server.
 
     logger.info('App Kit pipeline reached tracking (skeleton stops here)', {
       buildId: build.buildId

@@ -6,18 +6,24 @@ const vercelService = require('../../integrations/vercel/services/vercelService'
 /**
  * App Kit Deploy Service
  *
- * Phase 2 slice of the `deploying` step (see FLORA_APP_KIT_ARCHITECTURE.md §8):
- * provisions the GitHub repo and the deploy-target hosting shell for a build,
- * reusing the existing GitHub/Railway/Vercel integration services as-is.
+ * Provisions the GitHub repo and the deploy-target hosting shell for a build,
+ * reusing the existing GitHub/Railway/Vercel integration services as-is (see
+ * FLORA_APP_KIT_ARCHITECTURE.md §8).
  *
- * What this does NOT do yet (phase 3, template renderer):
- *   - push any scaffolded source into the new repo (Octokit here is only
- *     authenticated as the user's own token — auto_init gives an empty repo
- *     with just a default branch/README, nothing more)
- *   - trigger a real first deployment (Railway/Vercel need buildable source
- *     to build from; there is none yet, so no deployment is triggered here)
- * So `deployUrl` on return is best-effort: a target may not expose one until
- * a real deploy happens, in which case it is null.
+ * `createGitHubRepo` and `provisionHostingShell` are exported separately
+ * (rather than one combined `deploy()`) because phase 3 moved repo creation
+ * out of the `deploying` step and into the start of `scaffolding` — the repo
+ * has to exist before the template renderer can push anything into it. See
+ * the ordering comment on `runPipeline` in `appKitBuildService.js` for the
+ * full reasoning. `deploying` now only calls `provisionHostingShell`, against
+ * a repo that was already created (and already has scaffolded + generated
+ * source pushed to it) earlier in the pipeline.
+ *
+ * `provisionHostingShell` does NOT trigger a real first deployment — Railway/
+ * Vercel need a build to run against, which is a further increment (out of
+ * scope here); env vars are set so the *next* deploy has them. So `deployUrl`
+ * on return is best-effort: a target may not expose one until a real deploy
+ * happens, in which case it is null.
  */
 
 function slugify(appName) {
@@ -122,15 +128,14 @@ async function provisionVercel(build, appToken) {
 }
 
 /**
- * Provision the GitHub repo + deploy-target hosting shell for a build.
+ * Provision the deploy-target hosting shell (Railway project/service or
+ * Vercel project) for a build whose GitHub repo already exists.
  *
  * @param {import('../models/AppKitBuild')} build
  * @param {string} [appToken] - raw scoped CC app token, in-memory only (never persisted)
- * @returns {Promise<{ repo: string, deployUrl: string|null }>}
+ * @returns {Promise<{ deployUrl: string|null }>}
  */
-async function deploy(build, appToken) {
-  const repo = await createGitHubRepo(build);
-
+async function provisionHostingShell(build, appToken) {
   let deployUrl = null;
   if (build.deployTarget === 'railway') {
     ({ deployUrl } = await provisionRailway(build, appToken));
@@ -140,11 +145,11 @@ async function deploy(build, appToken) {
     throw new Error(`Unsupported App Kit deploy target: ${build.deployTarget}`);
   }
 
-  logger.info('App Kit deploy dispatch complete', {
-    buildId: build.buildId, repo: repo.fullName, deployTarget: build.deployTarget
+  logger.info('App Kit hosting shell provisioned', {
+    buildId: build.buildId, repo: build.repo, deployTarget: build.deployTarget
   });
 
-  return { repo: repo.fullName, deployUrl };
+  return { deployUrl };
 }
 
-module.exports = { deploy };
+module.exports = { createGitHubRepo, provisionHostingShell };

@@ -1,8 +1,10 @@
 # Flora App Kit — Architecture & Build-Flow Specification
 
-**Status:** Skeleton implemented — see `src/appkit/` (model, build-flow interface,
-manifest validation, phase state machine, CC callbacks). External phase effects are
-marked `TODO(appkit-phase-N)` per §8.
+**Status:** Phases 1–3 implemented — see `src/appkit/` (model, build-flow interface,
+manifest validation, phase state machine, CC callbacks, opinionated template +
+scaffold/generate/static-integrity pipeline, deploy orchestration). Remaining
+gaps (dynamic CI-driven test execution, `driftAnalysisService` wiring) are
+flagged per §8.
 **Owning service:** `flora-devops` (App Kit ships as a module *inside* this service)
 **Companion doc:** `flora-command-center/APP_KIT_PROJECT_CONTRACT.md` (the CC-side project/audit contract)
 
@@ -75,12 +77,14 @@ src/appkit/
 ├── models/
 │   └── AppKitBuild.js            # build lifecycle record (multi-tenant)
 ├── templates/
-│   └── <opinionated-stack>/      # the single fixed template + baked-in
-│                                 #   data-integrity test scaffold
+│   └── v0/                       # the single fixed template (minimal Express
+│       └── index.js              #   app) + baked-in data-integrity test scaffold
 ├── services/
-│   ├── appKitBuildService.js     # orchestrates scaffold→test→deploy→track
-│   ├── appKitScaffoldService.js  # renders template, wires scoped data client
+│   ├── appKitBuildService.js     # orchestrates scaffold→generate→integrity→deploy→track
+│   ├── appKitScaffoldService.js  # renders template, pushes files to the repo
 │   ├── appKitGenerateService.js  # calls Command Center provider brain to fill code
+│   ├── appKitIntegrityService.js # static manifest-conformance check (v0 integrity gate)
+│   ├── appKitDeployService.js    # GitHub repo + Railway/Vercel hosting shell
 │   └── appKitManifestService.js  # validates + persists the capability manifest
 ├── routes/
 │   └── index.js                  # mounted at /api/appkit
@@ -199,14 +203,47 @@ APP_KIT_DEFAULT_DEPLOY_TARGET=   # railway | vercel
 ## 8. Phasing
 
 1. `AppKitBuild` model + `POST /api/appkit/builds` + manifest validation + CC callback.
-2. **Deploy orchestration over existing GitHub + Railway/Vercel services — done
-   for the repo + hosting-shell slice.** `appKitDeployService.js` creates the
-   GitHub repo (auto-init, empty) and a Railway project/service or Vercel
-   project via the existing integration services, and injects the scoped CC
-   app token into the target's env vars. **Still pending, both blocked on the
-   phase-3 template renderer:** pushing generated source into the repo /
-   triggering a real first deploy (so `deployUrl` stays `null` for now), and
-   the `driftAnalysisService` pre-merge gate (it scores a real requirements-mapped
-   PR diff, which doesn't exist until generated code does).
-3. Opinionated template + baked-in data-integrity tests; gate deploy on them.
+2. **Deploy orchestration over existing GitHub + Railway/Vercel services — done.**
+   `appKitDeployService.js` creates the GitHub repo and a Railway project/service
+   or Vercel project via the existing integration services, and injects the
+   scoped CC app token into the target's env vars.
+3. **Opinionated template + baked-in data-integrity tests; gate deploy on
+   them — done (v0).**
+   - `src/appkit/templates/v0/` renders the single fixed stack (minimal Express
+     app, `src/appKitClient.js` scoped data client, `tests/data-integrity.test.js`,
+     `.github/workflows/ci.yml`, `package.json`, `README.md`).
+   - `appKitScaffoldService.js` renders the template and pushes it into the
+     build's repo (`githubRepoService.createOrUpdateFile`, new in phase 3).
+   - `appKitGenerateService.js` calls Command Center's provider-brain endpoint
+     (`POST /api/command-center/appkit/generate`) and splices the result into
+     the scaffolded example route. That endpoint's response shape is owned by a
+     different workstream and wasn't finalized when this landed, so parsing is
+     defensive (`code`/`raw`/`content`/`files` fields, one level of `{ data }`
+     nesting) and degrades to the template's placeholder route rather than
+     failing the build outright.
+   - **Repo creation moved from `deploying` to the start of `scaffolding`**
+     (`appKitDeployService.createGitHubRepo`, called directly from
+     `appKitBuildService.runPipeline`) because the repo must exist before any
+     template file can be pushed into it. Rendered files are held in memory for
+     the rest of the pipeline and pushed only once `integrity_testing` passes,
+     so a `blocked` build never has non-conforming code pushed to GitHub.
+     `deploying` now only provisions the hosting shell
+     (`appKitDeployService.provisionHostingShell`) against a repo that already
+     has real, requirements-relevant source in it — see the ordering comment on
+     `runPipeline` for the full reasoning.
+   - **`integrity_testing` is a static manifest-conformance check, not dynamic
+     test execution.** `appKitIntegrityService.js` extracts every
+     `callAppKit('op', ...)` the generated source actually calls and
+     cross-checks each one against `appKitManifestService.isOperationAllowed`.
+     A call the manifest doesn't cover transitions the build to `blocked` (now
+     actually reachable) instead of `deploying`. Actually running the
+     template's Jest suite — executing LLM-generated, attacker-influenceable
+     code — was deliberately left out of this live server process (would need
+     `child_process`/`npm install` here, a real code-execution-surface decision
+     out of scope for this increment).
+   - **Still pending:** real dynamic, CI-driven test execution — a webhook from
+     the `.github/workflows/ci.yml` this scaffold ships back into
+     `integrity_testing` (or a post-deploy gate) — as a stronger check layered
+     on top of the static one above; and wiring `driftAnalysisService` into
+     `tracking` now that a real, requirements-mapped diff exists to score.
 4. Expose the build flow as flora-mcp-server tools / a skill so NL requests drive it.
