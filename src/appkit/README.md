@@ -24,6 +24,14 @@ appkit/
 
 ## Endpoints (mounted at `/api/appkit`)
 
+All three require `authenticateService` — see Config below. **This was not
+always true**: for most of this feature's build-out, none of these routes had
+any authentication at all, meaning any caller who could reach this service
+could trigger real infra provisioning and LLM spend for an arbitrary
+organizationId, and read any build's details regardless of tenant. Fixed by
+requiring the same shared secret this service already sends to Command
+Center (`X-API-Key: APP_KIT_SERVICE_KEY`), now enforced in both directions.
+
 | Method | Path | Purpose |
 |--------|------|---------|
 | `POST` | `/builds` | Kick off a build (CC → devops handoff). Returns `202` + `buildId`. |
@@ -70,4 +78,8 @@ Still pending, see `FLORA_APP_KIT_ARCHITECTURE.md` §8 for full detail:
 COMMAND_CENTER_API_URL=          # CC base URL (generate + data broker + callbacks)
 APP_KIT_TEMPLATE_VERSION=        # pinned opinionated-stack version
 APP_KIT_DEFAULT_DEPLOY_TARGET=   # railway | vercel
+APP_KIT_SERVICE_KEY=             # shared secret gating /builds and /builds/:id — MUST match
+                                  # the same env var on flora-command-center exactly. Every
+                                  # caller (CC's /requests proxy, flora-mcp-server's
+                                  # app_kit/build tool) must send it as X-API-Key.
 ```

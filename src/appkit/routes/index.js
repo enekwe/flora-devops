@@ -12,6 +12,41 @@ const buildService = require('../services/appKitBuildService');
  * enters the devops delivery plane (see FLORA_APP_KIT_ARCHITECTURE.md §4).
  */
 
+/**
+ * Service-to-service auth, mirroring flora-command-center's own
+ * authenticateService exactly (src/appkit/routes/index.js there) and reusing
+ * the SAME shared secret this service already sends outbound to CC (see
+ * requestScopedToken/postCallback in appKitBuildService.js, X-API-Key:
+ * process.env.APP_KIT_SERVICE_KEY) — so one env var, set identically on both
+ * services, authenticates the whole devops<->CC App Kit relationship in both
+ * directions.
+ *
+ * Until this existed, POST /builds had NO authentication at all: anyone who
+ * could reach this service could trigger real infra provisioning (GitHub
+ * repos, Railway/Vercel projects), real LLM spend, and mint a scoped
+ * data-broker token for any organizationId/companyId they chose to supply —
+ * there was nothing verifying the caller was authorized to act as that org.
+ * GET /builds/:buildId and GET /builds were also open, which meant the
+ * cross-tenant check flora-mcp-server's app_kit/status tool performs
+ * client-side was trivially bypassable by calling this service directly.
+ */
+function authenticateService(req, res, next) {
+  const provided = req.headers['x-api-key'] || req.headers['authorization']?.replace('Bearer ', '');
+  const expected = process.env.APP_KIT_SERVICE_KEY;
+
+  if (expected) {
+    if (provided !== expected) {
+      return res.status(401).json({ success: false, error: 'Invalid service key' });
+    }
+    return next();
+  }
+
+  if (!provided && process.env.NODE_ENV === 'production') {
+    return res.status(401).json({ success: false, error: 'Service key required' });
+  }
+  next();
+}
+
 const objectId = Joi.string().pattern(/^[0-9a-fA-F]{24}$/);
 
 const createBuildSchema = Joi.object({
@@ -48,7 +83,7 @@ const createBuildSchema = Joi.object({
  * Kick off a custom-app build. Returns immediately with the buildId; the pipeline
  * advances asynchronously and reports each phase back to callbackUrl.
  */
-router.post('/builds', validateRequest(createBuildSchema), async (req, res, next) => {
+router.post('/builds', authenticateService, validateRequest(createBuildSchema), async (req, res, next) => {
   try {
     const build = await buildService.createBuild(req.body);
     res.status(202).json({
@@ -66,7 +101,7 @@ router.post('/builds', validateRequest(createBuildSchema), async (req, res, next
  * GET /api/appkit/builds/:buildId
  * Read current phase, drift score, deploy URL, and repo for a build.
  */
-router.get('/builds/:buildId', async (req, res, next) => {
+router.get('/builds/:buildId', authenticateService, async (req, res, next) => {
   try {
     const build = await buildService.getBuild(req.params.buildId);
     if (!build) {
@@ -82,7 +117,7 @@ router.get('/builds/:buildId', async (req, res, next) => {
  * GET /api/appkit/builds?organizationId=&projectId=&limit=
  * List builds for a tenant / project.
  */
-router.get('/builds', async (req, res, next) => {
+router.get('/builds', authenticateService, async (req, res, next) => {
   try {
     const builds = await buildService.listBuilds({
       organizationId: req.query.organizationId,
