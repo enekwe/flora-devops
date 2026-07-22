@@ -97,6 +97,11 @@ const appKitBuildSchema = new mongoose.Schema({
   repo: { type: String },        // e.g. "enekwe/capital-call-tracker"
   deployUrl: { type: String },
 
+  // Reference to the scoped app token CC minted for this build at `deploying`
+  // (jti only — the raw token is never persisted here; it's injected into the
+  // deployed app's environment). Used to trace/revoke via CC's token registry.
+  appTokenJti: { type: String },
+
   // Drift analysis (populated from `tracking` onward).
   driftScore: { type: Number, min: 0, max: 100 },
   driftStatus: { type: String },

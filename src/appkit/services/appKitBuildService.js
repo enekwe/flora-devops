@@ -64,6 +64,75 @@ async function advance(build, phase, detail) {
 }
 
 /**
+ * Request a scoped app token from Command Center for a build entering `deploying`.
+ * The token carries the manifest scopes AND lets CC classify the app's own ZDR
+ * trust tier from `deployTarget` (Railway/Vercel = standard_hosted, not
+ * self_hosted) — that classification is what allows CC's broker to deny ZDR
+ * tenants' data to apps hosted on public-cloud PaaS. See appKitTokenService on
+ * the Command Center side.
+ *
+ * The raw token is never persisted here — only its `jti`, for traceability and
+ * so a failed/blocked build can be revoked. The token itself is meant to be
+ * injected into the deployed app's environment at deploy time.
+ */
+async function requestScopedToken(build) {
+  const url = `${config.COMMAND_CENTER_API_URL}/api/command-center/appkit/tokens`;
+
+  const response = await axios.post(url, {
+    buildId: build.buildId,
+    projectId: build.projectId,
+    requestId: build.requestId,
+    organizationId: String(build.organizationId),
+    userId: String(build.userId),
+    companyId: build.companyId ? String(build.companyId) : undefined,
+    deployTarget: build.deployTarget,
+    scope: {
+      dataScopes: build.manifest?.dataScopes || [],
+      systems: build.manifest?.systems || []
+    }
+  }, {
+    timeout: 10000,
+    headers: {
+      'X-Service-Name': config.SERVICE_NAME,
+      ...(process.env.APP_KIT_SERVICE_KEY ? { 'X-API-Key': process.env.APP_KIT_SERVICE_KEY } : {})
+    }
+  });
+
+  build.appTokenJti = response.data?.jti;
+  await build.save();
+
+  logger.info('App Kit scoped token issued by Command Center', {
+    buildId: build.buildId, jti: build.appTokenJti
+  });
+
+  return response.data;
+}
+
+/**
+ * Revoke a build's scoped token(s) in Command Center — called when a build
+ * fails after a token was already minted, so a broken/abandoned build cannot
+ * retain live data access.
+ */
+async function revokeScopedToken(build) {
+  if (!build.appTokenJti) return; // nothing was ever minted
+  const url = `${config.COMMAND_CENTER_API_URL}/api/command-center/appkit/tokens/${build.buildId}`;
+  try {
+    await axios.delete(url, {
+      timeout: 10000,
+      headers: {
+        'X-Service-Name': config.SERVICE_NAME,
+        ...(process.env.APP_KIT_SERVICE_KEY ? { 'X-API-Key': process.env.APP_KIT_SERVICE_KEY } : {})
+      }
+    });
+    logger.info('App Kit scoped token revoked after failure', { buildId: build.buildId });
+  } catch (err) {
+    logger.error('App Kit scoped token revoke failed (non-fatal)', {
+      buildId: build.buildId, error: err.message
+    });
+  }
+}
+
+/**
  * Create a build from a validated request and enter the pipeline.
  *
  * @param {object} input - already Joi-validated by the route
@@ -128,8 +197,10 @@ async function runPipeline(build) {
     //   `await advance(build, 'blocked', reason)` and return — do NOT deploy.
 
     await advance(build, 'deploying', `Deploying via ${build.deployTarget}`);
+    await requestScopedToken(build);
     // TODO(appkit-phase-2): reuse githubRepoService (create repo/commit) +
-    //   railway/vercel service to ship. Request a scoped app token from CC.
+    //   railway/vercel service to ship, injecting the scoped token above into
+    //   the deployed app's environment.
 
     await advance(build, 'tracking', 'Deployed; awaiting drift analysis + deploy webhooks');
     // TODO(appkit-phase-2): driftAnalysisService gate + POST /deployment webhook
@@ -141,6 +212,7 @@ async function runPipeline(build) {
   } catch (err) {
     build.error = err.message;
     await advance(build, 'failed', `Pipeline error: ${err.message}`);
+    await revokeScopedToken(build);
     throw err;
   }
 }
