@@ -139,6 +139,33 @@ class VercelService {
     }
   }
 
+  /**
+   * Create a new project
+   * @param {string} connectionId - Connection ID
+   * @param {Object} projectData - Project configuration (name, framework, etc.)
+   * @param {string} teamId - Optional team ID override
+   * @returns {Object} Created project
+   */
+  async createProject(connectionId, projectData, teamId = null) {
+    try {
+      const { accessToken, teamId: connectionTeamId } = await this.getAccessTokenByConnectionId(connectionId);
+      const effectiveTeamId = teamId || connectionTeamId;
+
+      const project = await vercelApiService.createProject(accessToken, projectData, effectiveTeamId);
+
+      return {
+        id: project.id,
+        name: project.name,
+        framework: project.framework,
+        link: project.link,
+        createdAt: project.createdAt
+      };
+    } catch (error) {
+      logger.error('Failed to create Vercel project:', error);
+      throw error;
+    }
+  }
+
   // ============ DEPLOYMENTS ============
 
   /**

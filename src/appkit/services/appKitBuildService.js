@@ -4,6 +4,7 @@ const config = require('../../config');
 const logger = require('../../config/logger');
 const AppKitBuild = require('../models/AppKitBuild');
 const manifestService = require('./appKitManifestService');
+const deployService = require('./appKitDeployService');
 
 /**
  * App Kit Build Service
@@ -197,14 +198,22 @@ async function runPipeline(build) {
     //   `await advance(build, 'blocked', reason)` and return — do NOT deploy.
 
     await advance(build, 'deploying', `Deploying via ${build.deployTarget}`);
-    await requestScopedToken(build);
-    // TODO(appkit-phase-2): reuse githubRepoService (create repo/commit) +
-    //   railway/vercel service to ship, injecting the scoped token above into
-    //   the deployed app's environment.
+    const scopedToken = await requestScopedToken(build);
+    // Raw token lives only in this local variable, never persisted to Mongo
+    // (build.appTokenJti is the only DB-side reference); it's threaded straight
+    // into the deploy call so it can be injected into the new service's env.
+    const { repo, deployUrl } = await deployService.deploy(build, scopedToken?.token);
+    build.repo = repo;
+    build.deployUrl = deployUrl;
 
     await advance(build, 'tracking', 'Deployed; awaiting drift analysis + deploy webhooks');
-    // TODO(appkit-phase-2): driftAnalysisService gate + POST /deployment webhook
-    //   updates set build.driftScore / build.driftStatus / build.deployUrl.
+    // TODO(appkit-phase-3): driftAnalysisService gate is deliberately NOT wired
+    //   here. It scores a real PR diff against CC's requirements graph
+    //   (analyzePullRequest(prPayload, connection)) — but this build's repo is a
+    //   single auto-init commit with no generated/requirements-mapped code yet
+    //   (that arrives with the phase-3 template renderer). Forcing it in now
+    //   would just score an empty repo. Revisit once appKitGenerateService /
+    //   appKitScaffoldService produce a real diff to gate on.
 
     logger.info('App Kit pipeline reached tracking (skeleton stops here)', {
       buildId: build.buildId

@@ -199,7 +199,14 @@ APP_KIT_DEFAULT_DEPLOY_TARGET=   # railway | vercel
 ## 8. Phasing
 
 1. `AppKitBuild` model + `POST /api/appkit/builds` + manifest validation + CC callback.
-2. Deploy orchestration over existing GitHub + Railway/Vercel services; reuse
-   `driftAnalysisService` as the pre-merge gate.
+2. **Deploy orchestration over existing GitHub + Railway/Vercel services — done
+   for the repo + hosting-shell slice.** `appKitDeployService.js` creates the
+   GitHub repo (auto-init, empty) and a Railway project/service or Vercel
+   project via the existing integration services, and injects the scoped CC
+   app token into the target's env vars. **Still pending, both blocked on the
+   phase-3 template renderer:** pushing generated source into the repo /
+   triggering a real first deploy (so `deployUrl` stays `null` for now), and
+   the `driftAnalysisService` pre-merge gate (it scores a real requirements-mapped
+   PR diff, which doesn't exist until generated code does).
 3. Opinionated template + baked-in data-integrity tests; gate deploy on them.
 4. Expose the build flow as flora-mcp-server tools / a skill so NL requests drive it.
