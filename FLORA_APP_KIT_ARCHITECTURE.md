@@ -1,6 +1,8 @@
 # Flora App Kit — Architecture & Build-Flow Specification
 
-**Status:** Design proposal (not yet implemented)
+**Status:** Skeleton implemented — see `src/appkit/` (model, build-flow interface,
+manifest validation, phase state machine, CC callbacks). External phase effects are
+marked `TODO(appkit-phase-N)` per §8.
 **Owning service:** `flora-devops` (App Kit ships as a module *inside* this service)
 **Companion doc:** `flora-command-center/APP_KIT_PROJECT_CONTRACT.md` (the CC-side project/audit contract)
 
